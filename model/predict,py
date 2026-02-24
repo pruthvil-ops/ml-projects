@@ -1,0 +1,91 @@
+import pandas as pd
+import numpy as np
+import joblib
+import sys
+import os
+
+def predict_anomaly(model_path, input_data):
+    """Predict anomalies for a DataFrame or CSV path using the trained pipeline."""
+    print("Loading trained model")
+    
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model file not found: {model_path}")
+    
+    pipeline = joblib.load(model_path)
+    print(f"Model loaded: {type(pipeline['model']).__name__}")
+    
+    if isinstance(input_data, pd.DataFrame):
+        new_data = input_data.copy()
+    else:
+        print(f"Loading data from {input_data}")
+        new_data = pd.read_csv(input_data, encoding='latin1', low_memory=False)
+
+    print(f"Input data shape: {new_data.shape}")
+    
+    X_new = new_data.copy()
+    X_new.columns = [str(c).strip() for c in X_new.columns]
+    
+    model_features = pipeline['feature_names']
+    for feature in model_features:
+        if feature not in X_new.columns:
+            X_new[feature] = 0
+    X_new = X_new[model_features]
+    X_new = X_new.replace([np.inf, -np.inf], np.nan)
+    
+    print(f"Using {len(model_features)} features for prediction")
+    
+    X_imputed = pipeline['imputer'].transform(X_new)
+    X_scaled = pipeline['scaler'].transform(X_imputed)
+    
+    print("Making predictions")
+    predictions_encoded = pipeline['model'].predict(X_scaled)
+    predictions = pipeline['label_encoder'].inverse_transform(predictions_encoded)
+    
+    if hasattr(pipeline['model'], 'predict_proba'):
+        probabilities = pipeline['model'].predict_proba(X_scaled)
+        confidence = np.max(probabilities, axis=1)
+    else:
+        confidence = np.ones(len(X_scaled))
+    
+    results = new_data.copy()
+    results['Prediction'] = predictions
+    results['Confidence'] = confidence
+    results['Is_Anomaly'] = results['Prediction'] != 'BENIGN'
+
+    return results
+
+
+def predict_new_data(model_path, input_file):
+    """Predict anomalies on new data and save result CSV."""
+    results = predict_anomaly(model_path, input_file)
+    
+    output_file = 'predictions.csv'
+    results.to_csv(output_file, index=False)
+    
+    print("Prediction results")
+    print(f"Total samples: {len(results)}")
+    
+    attack_count = (results['Prediction'] != 'BENIGN').sum()
+    print(f"Attacks detected: {attack_count}")
+    print(f"Benign traffic: {len(results) - attack_count}")
+    
+    print("Attack breakdown")
+    for attack_type in results['Prediction'].unique():
+        count = (results['Prediction'] == attack_type).sum()
+        percentage = (count / len(results)) * 100
+        print(f"   - {attack_type}: {count} ({percentage:.1f}%)")
+    
+    print(f"Predictions saved to: {output_file}")
+    
+    return results
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        print("Usage: python predict_anomaly.py <model_path> <input_csv>")
+        print("Example: python predict_anomaly.py cicids_model.pkl new_traffic.csv")
+        sys.exit(1)
+    
+    model_path = sys.argv[1]
+    input_file = sys.argv[2]
+    
+    predict_new_data(model_path, input_file)

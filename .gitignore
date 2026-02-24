@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# OS/Editor
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs and temp
+logs/
+*.log
+*.tmp
+
+# Data and model artifacts
+data/
+model/*.pkl
+predictions.csv
+model_training_results.csv
+
+# Jupyter
+.ipynb_checkpoints/
